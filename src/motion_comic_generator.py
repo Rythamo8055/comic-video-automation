@@ -2,10 +2,23 @@
 """
 motion_comic_generator.py - Generates dynamic motion comic clips with Ken Burns pan/zoom,
 voice synchronization, and background music auto-ducking.
+Works seamlessly on CPU with libopenh264 or libx264.
 """
 
 import os
 import subprocess
+
+def get_h264_encoder():
+    """Finds best available H.264 encoder on system."""
+    try:
+        res = subprocess.check_output(["ffmpeg", "-encoders"], text=True, stderr=subprocess.DEVNULL)
+        if "libopenh264" in res:
+            return "libopenh264"
+        elif "libx264" in res:
+            return "libx264"
+    except Exception:
+        pass
+    return "h264"
 
 def create_motion_clip(image_path, audio_path, output_clip_path, mode="zoom_in", fps=24):
     """
@@ -15,39 +28,36 @@ def create_motion_clip(image_path, audio_path, output_clip_path, mode="zoom_in",
       - 'pan_down': Smooth vertical scroll (top-to-bottom)
       - 'shake': Impact shake effect
     """
-    # 1. Get audio duration
     probe_cmd = [
         "ffprobe", "-v", "error", "-show_entries", "format=duration",
         "-of", "default=noprint_wrappers=1:nokey=1", audio_path
     ]
     duration_str = subprocess.check_output(probe_cmd, text=True).strip()
     duration = float(duration_str)
-    total_frames = int(duration * fps)
+    total_frames = max(int(duration * fps), 24)
+    encoder = get_h264_encoder()
 
-    # 2. Build Ken Burns filter complex based on mode
     if mode == "zoom_in":
-        # Slow zoom in towards center
         vf = (
-            f"scale=1920x1080:force_original_aspect_ratio=increase,"
-            f"crop=1920:1080,"
-            f"zoompan=z='min(zoom+0.0015,1.2)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':"
-            f"d={total_frames}:s=1920x1080:fps={fps}"
+            f"scale=1280:720:force_original_aspect_ratio=increase,"
+            f"crop=1280:720,"
+            f"zoompan=z='min(zoom+0.0012,1.15)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':"
+            f"d={total_frames}:s=1280x720:fps={fps}"
         )
     elif mode == "pan_down":
-        # Vertical pan down across tall comic panel
         vf = (
-            f"scale=1920:-1,"
-            f"zoompan=z=1.0:x=0:y='min(on*2, ih-1080)':"
-            f"d={total_frames}:s=1920x1080:fps={fps}"
+            f"scale=1280:-1,"
+            f"zoompan=z=1.0:x=0:y='min(on*2, ih-720)':"
+            f"d={total_frames}:s=1280x720:fps={fps}"
         )
-    else:  # Static / slight float
-        vf = f"scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2"
+    else:
+        vf = f"scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2"
 
     cmd = [
         "ffmpeg", "-y", "-loop", "1", "-i", image_path,
         "-i", audio_path,
         "-vf", vf,
-        "-c:v", "libx264", "-tune", "stillimage", "-pix_fmt", "yuv420p",
+        "-c:v", encoder, "-pix_fmt", "yuv420p",
         "-c:a", "aac", "-b:a", "192k",
         "-t", str(duration),
         output_clip_path
@@ -59,7 +69,6 @@ def assemble_full_video(clip_paths, bgm_path, final_output_path):
     """
     Concatenates panel clips and mixes background music with auto-ducking.
     """
-    # Create concat list file
     concat_list = "temp_concat.txt"
     with open(concat_list, "w") as f:
         for clip in clip_paths:
@@ -70,7 +79,6 @@ def assemble_full_video(clip_paths, bgm_path, final_output_path):
         "-f", "concat", "-safe", "0", "-i", concat_list,
         "-i", bgm_path,
         "-filter_complex",
-        # Duck BGM to volume 0.15 underneath voice narration
         "[1:a]volume=0.15[bgm];[0:a][bgm]amix=inputs=2:duration=first[aout]",
         "-map", "0:v", "-map", "[aout]",
         "-c:v", "copy", "-c:a", "aac",
@@ -82,4 +90,4 @@ def assemble_full_video(clip_paths, bgm_path, final_output_path):
     print(f"Final video successfully generated: {final_output_path}")
 
 if __name__ == "__main__":
-    print("Motion Comic Generator ready. Import into your automation script.")
+    print("Motion Comic Generator ready.")
