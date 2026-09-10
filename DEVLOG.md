@@ -130,3 +130,23 @@ Created a high-level, single-line Python API (`src/comic_toolkit.py`) providing 
 - `fadewhite`, `fadeblack`, `dissolve`, `hblur`
 - `zoomin`, `pixelize`, `circleopen`, `horzopen`
 - `wipeleft`, `wiperight`, `wipeup`, `wipedown`
+
+---
+
+## [Entry 06] - Full Comic Recap Production: 'Challenges Of Doom - Spider-Man #001'
+*Date: 2026-09-10*
+
+### Context
+Processed the user's downloaded 25-page comic book archive (`Challenges Of Doom - Spider-Man 001 (2026).cbz`) through the complete automated pipeline to create an authentic, YouTube-accurate recap video.
+
+### Production Pipeline Execution
+1. **Unpacking & Slicing:** Extracted all 25 high-resolution pages ($1988 \times 3056$) and sliced panels across key narrative beats.
+2. **Narration Scripting:** Formatted an 11-scene episodic script matching the energetic 170 WPM recap persona.
+3. **Voice Synthesis (Pocket TTS):** Kyutai Pocket TTS synthesized all 11 voiceovers locally on CPU in ~18 seconds (~3.3x real-time).
+4. **Cinematic Camera Choreography:**
+   - Push-In Zoom (Cubic Easing) for character close-ups and Doom's monologue.
+   - Vertical Reading Pan (Sine Easing) for Peter Parker's bedroom tinkering.
+   - Horizontal Widescreen Pan for Page 13's massive double-page gauntlet spread.
+   - Damped Impact Shake for the titanium blast doors slamming shut.
+5. **Transitions & Sound Mixing:** Chained clips with native FFmpeg `xfade` (`smoothleft`, `fadewhite`, `zoomin`, `fadeblack`) and layered action background score with automatic ducking.
+6. **Master Output:** `output/spiderman_challenges_of_doom_recap.mp4` (Duration: 2 min 7 sec, 1280x720 24fps).
