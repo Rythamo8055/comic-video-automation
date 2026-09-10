@@ -85,3 +85,25 @@ Create a deterministic, lightweight comic-to-video pipeline requiring **0 MB LLM
 - [ ] Aspect-ratio auto-fitting (handling tall webtoons vs standard comic spreads).
 - [ ] Animated word-by-word subtitle burn-in.
 - [ ] Background music mixer with automatic sidechain compression.
+
+---
+
+## [Entry 04] - 7 Dynamic Motion & Transition Modes Implemented
+*Date: 2026-09-10*
+
+### Context
+Expanded the motion comic engine from a single zoom to a full catalog of **7 camera movements and transition types** modeled directly after the *Chaquetrix Pt. 1* reference video.
+
+### Implemented Modes
+1. **`zoom_in` (Push-In Zoom):** Slow scale ($1.0\times \to 1.15\times$) into panel center for dialogue and character focus.
+2. **`zoom_out` (Pull-Out Reveal):** Reverse scale ($1.25\times \to 1.0\times$) revealing the environment or new incoming character.
+3. **`pan_down` (Vertical Pan):** Reading order scroll ($Y_0 \to Y_{\max}$) for tall panels and webtoons.
+4. **`pan_horizontal` (Panoramic Track):** Lateral glide ($X_0 \to X_{\max}$) across wide double-page battle spreads.
+5. **`shake` (Camera Shake):** Dynamic sinusoidal displacement ($X, Y \pm 15\text{px}$) for punches, blasts, and impact SFX.
+6. **`snap_zoom` (Punch/Jump Zoom):** 0-frame jump cut ($1.0\times \to 1.35\times$) for shock or punchlines.
+7. **`white_flash` (Impact Flash Cut):** 2–3 frame white burst between high-energy scene cuts.
+
+### Visual Verification
+- All 7 modes rendered directly from comic screenshots (`analysis/comic_shots/`).
+- Render speed: **~0.15s to 0.29s** per clip using CPU FFmpeg.
+- Interactive showcase created: `transitions_showcase.html`.
