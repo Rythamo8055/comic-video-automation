@@ -34,6 +34,7 @@ analysis/sample_shots/
 analysis/more_shots/
 analysis/*.mp4
 output/
+data/
 
 # IDE / System
 .vscode/

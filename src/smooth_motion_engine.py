@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-smooth_motion_engine.py - Professional Motion Comic Camera Engine.
+smooth_motion_engine.py - Professional Motion Comic Camera Engine (1080p Full HD).
 Uses OpenCV + mathematical easing curves (Cubic, Sine, Smoothstep) and subpixel
 interpolation for butter-smooth camera pans, zooms, and impact shakes.
-Pipes directly to FFmpeg for high-quality, jitter-free video.
+Pipes directly to FFmpeg for high-quality, jitter-free 1080p video.
 """
 
 import os
@@ -32,17 +32,16 @@ def get_h264_encoder():
         pass
     return "h264"
 
-def render_motion(image_path, output_mp4, duration=2.5, fps=30, mode="push_in_zoom", audio_path=None):
+def render_motion(image_path, output_mp4, duration=2.5, fps=24, mode="push_in_zoom", audio_path=None, out_w=1920, out_h=1080):
     img = cv2.imread(image_path)
     if img is None:
         raise FileNotFoundError(f"Image not found: {image_path}")
 
     ih, iw = img.shape[:2]
-    out_w, out_h = 1280, 720
-    total_frames = int(duration * fps)
+    total_frames = max(int(duration * fps), 24)
     encoder = get_h264_encoder()
 
-    # Base scale to ensure the image at least fills the 1280x720 canvas
+    # Base scale to ensure the image at least fills the 1080p canvas
     base_scale = max(out_w / iw, out_h / ih)
     
     # FFmpeg Pipe
@@ -74,7 +73,6 @@ def render_motion(image_path, output_mp4, duration=2.5, fps=30, mode="push_in_zo
             # Smooth cubic ease-in-out zoom from 1.0x to 1.30x
             e = ease_in_out_cubic(t)
             scale = base_scale * (1.0 + 0.30 * e)
-            # Center zoom
             cw = out_w / scale
             ch = out_h / scale
             cx = iw / 2.0
@@ -90,25 +88,23 @@ def render_motion(image_path, output_mp4, duration=2.5, fps=30, mode="push_in_zo
             cy = ih / 2.0
 
         elif mode == "vertical_pan":
-            # Extra zoom of 1.35x to create vertical panning headroom
+            # 1.35x padding to allow smooth vertical glide
             scale = base_scale * 1.35
             cw = out_w / scale
             ch = out_h / scale
             e = ease_in_out_sine(t)
             cx = iw / 2.0
-            # Pan from top (y_min) to bottom (y_max)
             y_start = ch / 2.0
             y_end = ih - ch / 2.0
             cy = y_start + (y_end - y_start) * e
 
         elif mode == "horizontal_pan":
-            # Extra zoom of 1.35x to create horizontal panning headroom
+            # 1.35x padding to allow smooth horizontal glide
             scale = base_scale * 1.35
             cw = out_w / scale
             ch = out_h / scale
             e = ease_in_out_sine(t)
             cy = ih / 2.0
-            # Pan from left (x_min) to right (x_max)
             x_start = cw / 2.0
             x_end = iw - cw / 2.0
             cx = x_start + (x_end - x_start) * e
@@ -125,31 +121,27 @@ def render_motion(image_path, output_mp4, duration=2.5, fps=30, mode="push_in_zo
             # Exponentially decaying impact shock (punches / explosions)
             scale = base_scale * 1.08
             decay = math.exp(-4.0 * t)
-            dx = 25.0 * decay * math.sin(t * 35.0)
-            dy = 18.0 * decay * math.cos(t * 40.0)
+            dx = 30.0 * decay * math.sin(t * 35.0)
+            dy = 22.0 * decay * math.cos(t * 40.0)
             cw = out_w / scale
             ch = out_h / scale
             cx = (iw / 2.0) + dx
             cy = (ih / 2.0) + dy
 
         elif mode == "snap_punch_zoom":
-            # Jump cut at 40% time into face with slight 2-frame bounce
-            if t < 0.40:
+            if t < 0.35:
                 scale = base_scale * 1.0
                 cx = iw / 2.0
                 cy = ih / 2.0
             else:
-                punch_t = min((t - 0.40) / 0.1, 1.0)
-                # Bounce overshoot from 1.45x settling to 1.35x
-                bounce = 1.35 + 0.10 * math.exp(-6.0 * (t - 0.40)) * math.cos(20.0 * (t - 0.40))
+                bounce = 1.35 + 0.10 * math.exp(-6.0 * (t - 0.35)) * math.cos(20.0 * (t - 0.35))
                 scale = base_scale * bounce
-                # Zoom into focal character
-                cx = iw * 0.45
-                cy = ih * 0.40
+                cx = iw * 0.50
+                cy = ih * 0.45
             cw = out_w / scale
             ch = out_h / scale
 
-        else: # Default gentle float
+        else:
             scale = base_scale * (1.0 + 0.05 * t)
             cw = out_w / scale
             ch = out_h / scale
@@ -160,7 +152,6 @@ def render_motion(image_path, output_mp4, duration=2.5, fps=30, mode="push_in_zo
         x1 = cx - cw / 2.0
         y1 = cy - ch / 2.0
         
-        # Source points and destination points for affine transform
         src_pts = np.float32([
             [x1, y1],
             [x1 + cw, y1],
@@ -178,8 +169,7 @@ def render_motion(image_path, output_mp4, duration=2.5, fps=30, mode="push_in_zo
 
     proc.stdin.close()
     proc.wait()
-    print(f"Rendered [{mode}] -> {output_mp4}")
     return output_mp4
 
 if __name__ == "__main__":
-    print("Testing smooth motion engine...")
+    print("1080p Smooth Motion Engine ready.")

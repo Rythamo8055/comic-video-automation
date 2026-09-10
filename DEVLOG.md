@@ -150,3 +150,25 @@ Processed the user's downloaded 25-page comic book archive (`Challenges Of Doom 
    - Damped Impact Shake for the titanium blast doors slamming shut.
 5. **Transitions & Sound Mixing:** Chained clips with native FFmpeg `xfade` (`smoothleft`, `fadewhite`, `zoomin`, `fadeblack`) and layered action background score with automatic ducking.
 6. **Master Output:** `output/spiderman_challenges_of_doom_recap.mp4` (Duration: 2 min 7 sec, 1280x720 24fps).
+
+---
+
+## [Entry 07] - True 1080p Precision Panel-by-Panel Cinematic Engine & Procedural Action Score
+*Date: 2026-09-10*
+
+### Context
+Upgraded pipeline to address user feedback:
+1. Replaced whole-page cuts with **precision sub-panel extraction** ($P_1, P_2, P_3 \dots$) traversing panel-by-panel within each page (e.g. Page 4 ceiling $\to$ thwip $\to$ thud; Page 5 Aunt May $\to$ falling lamp $\to$ lamp catch $\to$ bedroom stress $\to$ Spider-Sense attack).
+2. Upgraded full rendering resolution to **True 1080p Full HD (`1920x1080`)** across all motion routines.
+3. Created a **135 BPM procedural action score** synthesized mathematically via SciPy/NumPy with driving kick/snare percussion, D-minor 16th-note ostinato synth bassline, and orchestral brass impacts.
+4. Auto-ducked background music sidechain under Kyutai Pocket TTS narration.
+
+### Key Benchmark Metrics
+- **Output Resolution:** `1920x1080` (1080p Full HD)
+- **Framerate:** 24 fps progressive
+- **Total Duration:** `170.67 seconds` (2 minutes 50 seconds)
+- **Sub-Panels Rendered:** 17 individual story panels
+- **Video Transitions:** 16 native FFmpeg `xfade` transitions (`smoothleft`, `wipeleft`, `fadewhite`, `fadeblack`, `zoomin`)
+- **File Size:** `45.9 MB`
+- **Output File:** `output/spiderman_doom_1080p_cinematic.mp4`
+
