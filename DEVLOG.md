@@ -107,3 +107,26 @@ Expanded the motion comic engine from a single zoom to a full catalog of **7 cam
 - All 7 modes rendered directly from comic screenshots (`analysis/comic_shots/`).
 - Render speed: **~0.15s to 0.29s** per clip using CPU FFmpeg.
 - Interactive showcase created: `transitions_showcase.html`.
+
+---
+
+## [Entry 05] - Built-in Comic Toolkit & 40+ Transition Presets
+*Date: 2026-09-10*
+
+### Context
+Created a high-level, single-line Python API (`src/comic_toolkit.py`) providing pre-packaged camera motions (with Cubic/Sine easing) and native FFmpeg `xfade` transitions.
+
+### Built-in Camera Functions
+- `zoom_in(image, output, duration)`
+- `zoom_out(image, output, duration)`
+- `pan_vertical(image, output, duration)`
+- `pan_horizontal(image, output, duration)`
+- `camera_shake(image, output, duration)`
+- `punch_zoom(image, output, duration)`
+
+### Built-in Scene Transitions (40+ Presets via `xfade`)
+- `smoothleft`, `smoothright`, `smoothup`, `smoothdown`
+- `slideleft`, `slideright`, `slideup`, `slidedown`
+- `fadewhite`, `fadeblack`, `dissolve`, `hblur`
+- `zoomin`, `pixelize`, `circleopen`, `horzopen`
+- `wipeleft`, `wiperight`, `wipeup`, `wipedown`

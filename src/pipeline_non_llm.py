@@ -1,11 +1,8 @@
 #!/usr/bin/env python3
 """
 pipeline_non_llm.py - Fully automated, 100% Non-LLM Motion Comic Recap Pipeline.
-Runs purely on CPU (No GPU required).
-1. Detects & crops speech bubbles using OpenCV.
-2. Transcribes comic dialogue using EasyOCR.
-3. Synthesizes voice narration using local Kyutai Pocket TTS.
-4. Generates dynamic Ken Burns animated video synchronized to the audio duration using FFmpeg.
+Uses OpenCV, EasyOCR, local Kyutai Pocket TTS, and the Smooth Motion Engine
+with Cubic & Sine easing curves (Ease-In / Ease-Out).
 """
 
 import os
@@ -13,20 +10,9 @@ import sys
 import subprocess
 import cv2
 import easyocr
+from src.smooth_motion_engine import render_motion
 
-def get_h264_encoder():
-    """Finds best available H.264 encoder on system."""
-    try:
-        res = subprocess.check_output(["ffmpeg", "-encoders"], text=True, stderr=subprocess.DEVNULL)
-        if "libopenh264" in res:
-            return "libopenh264"
-        elif "libx264" in res:
-            return "libx264"
-    except Exception:
-        pass
-    return "h264"
-
-def run_non_llm_pipeline(panel_image_path, output_dir="output/pipeline_result"):
+def run_non_llm_pipeline(panel_image_path, output_dir="output/pipeline_result", motion_mode="push_in_zoom"):
     os.makedirs(output_dir, exist_ok=True)
     print(f"\n==========================================")
     print(f"🎬 Processing Comic Panel: {panel_image_path}")
@@ -98,38 +84,27 @@ def run_non_llm_pipeline(panel_image_path, output_dir="output/pipeline_result"):
     duration = float(subprocess.check_output(probe_cmd, text=True).strip())
     print(f"  -> Audio generated successfully ({duration:.2f}s duration)")
 
-    # 4. Motion Video Assembly with FFmpeg
-    print("[4/4] Generating Ken Burns motion video via FFmpeg...")
+    # 4. Cinematic Motion Video Assembly with Cubic Easing
+    print(f"[4/4] Rendering cinematic motion video with smooth easing ({motion_mode})...")
     final_video = os.path.join(output_dir, "motion_panel.mp4")
-    fps = 24
-    total_frames = max(int(duration * fps), 24)
-    encoder = get_h264_encoder()
 
-    vf = (
-        f"scale=1280:720:force_original_aspect_ratio=increase,"
-        f"crop=1280:720,"
-        f"zoompan=z='min(zoom+0.0012,1.15)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':"
-        f"d={total_frames}:s=1280x720:fps={fps}"
+    render_motion(
+        image_path=panel_image_path,
+        output_mp4=final_video,
+        duration=duration,
+        fps=30,
+        mode=motion_mode,
+        audio_path=audio_path
     )
 
-    ffmpeg_cmd = [
-        "ffmpeg", "-y", "-loop", "1", "-i", panel_image_path,
-        "-i", audio_path,
-        "-vf", vf,
-        "-c:v", encoder, "-pix_fmt", "yuv420p",
-        "-c:a", "aac", "-b:a", "192k",
-        "-t", str(duration),
-        final_video
-    ]
-    subprocess.run(ffmpeg_cmd, check=True, stderr=subprocess.DEVNULL)
-
-    print(f"\n✨ SUCCESS! Created Motion Comic Video:")
+    print(f"\n✨ SUCCESS! Created Cinematic Motion Comic Video:")
     print(f"  Output Video : {final_video}")
-    print(f"  Duration     : {duration:.2f}s")
-    print(f"  Audio Track  : {audio_path}")
+    print(f"  Duration     : {duration:.2f}s @ 30fps")
+    print(f"  Camera Curve : Cubic Ease-In / Ease-Out")
     print(f"  Dialogue     : \"{full_dialogue}\"")
     return final_video
 
 if __name__ == "__main__":
     test_img = sys.argv[1] if len(sys.argv) > 1 else "analysis/comic_shots/shot_20.png"
-    run_non_llm_pipeline(test_img)
+    mode = sys.argv[2] if len(sys.argv) > 2 else "push_in_zoom"
+    run_non_llm_pipeline(test_img, motion_mode=mode)
