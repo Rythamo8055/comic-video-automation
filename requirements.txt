@@ -1,0 +1,13 @@
+opencv-python>=4.8.0
+numpy>=1.24.0
+Pillow>=10.0.0
+# OCR Options (choose one or more)
+# easyocr>=1.7.0
+# manga-ocr>=0.1.10
+# pytesseract>=0.3.10
+
+# Video Editing
+# moviepy>=1.0.3
+
+# Utilities
+tqdm>=4.66.0
