@@ -117,7 +117,7 @@ def extract_json_from_gemma_parts(parts):
 
 def map_compact_to_full_vision(res, h, w, ocr_hint):
     """
-    Transforms the compact Gemma output into the full pipeline schema.
+    Transforms the cinema-grade Gemma output into the full pipeline schema.
     """
     chars = res.get("characters", [])
     if not isinstance(chars, list):
@@ -127,20 +127,30 @@ def map_compact_to_full_vision(res, h, w, ocr_hint):
     scene_type = res.get("scene_type", "ACTION_COMBAT")
     cam = res.get("camera", "push_in_zoom")
     recap = res.get("recap", "The story unfolds across the panel.")
+    tone = res.get("tone", "Dramatic")
+    subtext = res.get("subtext", "")
+    sfx_val = res.get("sfx", "")
+    if isinstance(sfx_val, list):
+        sfx_list = sfx_val
+    elif isinstance(sfx_val, str) and sfx_val.strip():
+        sfx_list = [sfx_val.strip()]
+    else:
+        sfx_list = []
 
     return {
         "visual_context": {
             "scene_type": scene_type,
-            "setting": "Comic Narrative Scene",
+            "setting": res.get("setting", "Comic Narrative Scene"),
             "characters_present": chars or ["Featured Characters"],
             "action_and_poses": res.get("action", f"Visual panel composition with aspect ratio {w/h:.2f}:1"),
             "focal_point": "Central character action",
-            "dominant_mood_lighting": "Dynamic comic illustration style"
+            "dominant_mood_lighting": res.get("lighting", "Dynamic comic illustration style")
         },
         "dialogue_analysis": {
-            "spoken_dialogue": [{"speaker": speaker, "text": dlg, "tone": "Energetic"}] if dlg else [],
+            "spoken_dialogue": [{"speaker": speaker, "text": dlg, "tone": tone}] if dlg else [],
+            "subtext": subtext,
             "narration_captions": [],
-            "sound_effects": [],
+            "sound_effects": sfx_list,
             "filtered_noise": []
         },
         "cinematic_staging": {
@@ -155,10 +165,10 @@ GEMMA_ONLY_CASCADE = ["gemma-4-31b-it", "gemma-4-26b-a4b-it"]
 
 def query_cloud_vision(image_path, api_key=None, ocr_hint=None, models_cascade=None, comic_title="Spider-Man"):
     """
-    Strict Gemma-only cascade:
+    Cinema-grade Gemma-only cascade:
       Primary:  gemma-4-31b-it
       Fallback: gemma-4-26b-a4b-it
-      Paced at 5.0s interval (<10 RPM, <2,000 TPM) to strictly guarantee safety under 16k TPM.
+      Paced with 60s timeout to allow full Hollywood staging synthesis.
     """
     key = api_key or DEFAULT_API_KEY
     if not key:
@@ -170,10 +180,11 @@ def query_cloud_vision(image_path, api_key=None, ocr_hint=None, models_cascade=N
     img = cv2.imread(image_path)
     h, w = img.shape[:2] if img is not None else (1080, 1920)
 
-    prompt = f"""Comic: {comic_title}
+    prompt = f"""Cinema Director Staging.
+Comic: {comic_title}
 OCR: "{ocr_hint or 'Visual narrative panel'}"
-Output JSON format:
-{{"characters": ["Names"], "speaker": "Speaker", "dialogue": "Speech line", "action": "Action description", "scene_type": "ACTION_COMBAT", "camera": "push_in_zoom", "recap": "1-2 sentence narrator recap line"}}
+Output JSON:
+{{"setting": "Setting description", "characters": ["Character names"], "action": "Physical action and poses", "camera": "push_in_zoom | slow_pan_down | snap_punch_zoom | impact_shake", "lighting": "Color and atmosphere description", "speaker": "Speaker", "dialogue": "Clean dialogue line", "tone": "Delivery tone", "subtext": "Psychological subtext", "sfx": "Sound effects", "scene_type": "ACTION_COMBAT | DRAMATIC_REVEAL | DIALOGUE_CLOSEUP | COMEDIC_BEAT", "recap": "1-2 sentence high-retention narrator recap line"}}
 """
 
     payload = {
@@ -201,7 +212,7 @@ Output JSON format:
                 headers={"Content-Type": "application/json"}
             )
             try:
-                with urllib.request.urlopen(req, timeout=40) as response:
+                with urllib.request.urlopen(req, timeout=60) as response:
                     res_json = json.loads(response.read().decode("utf-8"))
                     parts = res_json["candidates"][0]["content"]["parts"]
                     for p in parts:
