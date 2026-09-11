@@ -140,27 +140,41 @@ def load_groq_api_key():
 
 GROQ_MODELS_CASCADE = ["qwen/qwen3.8-27b", "qwen/qwen3.6-27b"]
 
-def generate_act_with_groq(compact_panels, act_name, context_bridge="", api_key=None):
+def generate_act_with_groq(compact_panels, act_name, context_bridge="", api_key=None, style="hybrid"):
     """
     Calls Groq Cloud Qwen model fleet with stateful narrative sliding bridge.
-    Paced with strict max_tokens constraint to respect Groq OTPM and 8,000 TPM limit.
-    Dynamically respects x-ratelimit-reset-tokens headers.
+    Supports:
+      - 'hybrid': Distinct character voice acting + Narrator bridge
+      - 'storyteller': Single master charismatic YouTuber narrator (ComicsExplained style) quoting characters in-stride
     """
     key = api_key or load_groq_api_key()
     if not key:
         return None
 
-    system_prompt = (
-        "You are a master comic video recap showrunner in the style of ComicsExplained and Comicstorian.\n"
-        "Transform the sequential comic panels into snappy, high-retention broadcast scenes with distinct character voices "
-        "(e.g., Doctor Doom, Spider-Man, Aunt May, Narrator) and dynamic camera motions.\n"
-        "Rules:\n"
-        "1. Every panel must have at least one scene maintaining 1:1 or 1:2 pacing.\n"
-        "2. Doctor Doom speaks with grand, Shakespearean ego and dark intellect.\n"
-        "3. Spider-Man speaks with sarcastic, quick-witted Brooklyn comedic timing.\n"
-        "4. The Narrator bridges visual action and maintains high suspense.\n"
-        "5. Output valid JSON: {\"scenes\": [{\"panel_id\": \"...\", \"speaker\": \"Doctor Doom | Spider-Man | Narrator\", \"line\": \"...\", \"camera_motion\": \"push_in_zoom | snap_punch_zoom | slow_pan_down | impact_shake\", \"pacing_seconds\": 3.5}]}"
-    )
+    if style == "storyteller":
+        system_prompt = (
+            "You are Rob from ComicsExplained and Benny from Comicstorian.\n"
+            "You are producing a high-retention, cinematic YouTube storytelling breakdown video.\n"
+            "Deliver a continuous, high-energy, suspenseful recap spoken entirely by the MASTER STORYTELLER (Narrator).\n"
+            "Rules:\n"
+            "1. The speaker must ALWAYS be 'Narrator' (voice_id: 'alba').\n"
+            "2. Dramatically quote characters with vivid personality inside your narration (e.g. 'And Doom looks down with cold fury, declaring: \"None shall defy me!\"').\n"
+            "3. Explain the comic lore, build tension, and describe the action beats dynamically.\n"
+            "4. Every panel must have a corresponding narrative beat maintaining 3.5s to 5.0s pacing.\n"
+            "5. Output valid JSON: {\"scenes\": [{\"panel_id\": \"...\", \"speaker\": \"Narrator\", \"line\": \"...\", \"camera_motion\": \"push_in_zoom | snap_punch_zoom | slow_pan_down | impact_shake\", \"pacing_seconds\": 4.0}]}"
+        )
+    else:
+        system_prompt = (
+            "You are a master comic video recap showrunner in the style of ComicsExplained and Comicstorian.\n"
+            "Transform the sequential comic panels into snappy, high-retention broadcast scenes with distinct character voices "
+            "(e.g., Doctor Doom, Spider-Man, Aunt May, Narrator) and dynamic camera motions.\n"
+            "Rules:\n"
+            "1. Every panel must have at least one scene maintaining 1:1 or 1:2 pacing.\n"
+            "2. Doctor Doom speaks with grand, Shakespearean ego and dark intellect.\n"
+            "3. Spider-Man speaks with sarcastic, quick-witted Brooklyn comedic timing.\n"
+            "4. The Narrator bridges visual action and maintains high suspense.\n"
+            "5. Output valid JSON: {\"scenes\": [{\"panel_id\": \"...\", \"speaker\": \"Doctor Doom | Spider-Man | Narrator\", \"line\": \"...\", \"camera_motion\": \"push_in_zoom | snap_punch_zoom | slow_pan_down | impact_shake\", \"pacing_seconds\": 3.5}]}"
+        )
 
     user_prompt = f"Act: {act_name}\n"
     if context_bridge:
@@ -288,7 +302,7 @@ def generate_cohesive_script(
                         "camera": cs.get("recommended_camera_motion", "push_in_zoom")
                     })
 
-                act_result = generate_act_with_groq(compact_panels, act_name, context_bridge=context_bridge, api_key=groq_key)
+                act_result = generate_act_with_groq(compact_panels, act_name, context_bridge=context_bridge, api_key=groq_key, style=style)
                 if act_result:
                     groq_scenes.extend(act_result)
                     # Create continuity bridge from the last 2 lines for next act
@@ -403,7 +417,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Generate dynamic multi-voice comic script.")
     parser.add_argument("--vision-json", default="output/Challenges_of_Doom_Spider-Man_001/comic_scene_vision.json", help="Path to vision extraction JSON")
     parser.add_argument("--output", default="output/Challenges_of_Doom_Spider-Man_001/multivoice_script.json", help="Output multivoice_script.json path")
-    parser.add_argument("--style", choices=["hybrid", "recap_only", "dialogue_only"], default="hybrid", help="Script generation style")
+    parser.add_argument("--style", choices=["hybrid", "storyteller", "recap_only", "dialogue_only"], default="hybrid", help="Script generation style")
     parser.add_argument("--max-panels", type=int, default=None, help="Limit number of panels")
     parser.add_argument("--no-groq", action="store_true", help="Disable Groq and use local rules")
     args = parser.parse_args()
