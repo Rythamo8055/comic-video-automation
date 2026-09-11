@@ -28,6 +28,8 @@ wheels/
 *.avi
 *.wav
 *.mp3
+*.cbz
+*.cbr
 analysis/frames/
 analysis/comic_shots/
 analysis/sample_shots/
