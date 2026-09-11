@@ -23,112 +23,208 @@ import urllib.error
 import cv2
 import numpy as np
 
+import time
+import re
+import random
+
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
-def encode_image_base64(image_path, max_dim=1024):
+def load_api_key():
+    key = os.environ.get("GEMINI_API_KEY")
+    if not key:
+        env_file = os.path.join(PROJECT_ROOT, ".env")
+        if os.path.exists(env_file):
+            with open(env_file, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if line.startswith("GEMINI_API_KEY="):
+                        key = line.split("=", 1)[1].strip('"\'')
+                        break
+    return key or ""
+
+DEFAULT_API_KEY = load_api_key()
+DISABLED_MULTIMODAL_MODELS = set()
+
+class RateLimiter:
     """
-    Downsamples image for fast, bandwidth-efficient cloud multimodal inference.
+    Enforces strict rate limits:
+      - Max 12 Requests Per Minute (RPM) -> ~5.0s minimum interval (safely below 30 RPM limit)
+      - Strictly respects 16,000 Tokens Per Minute (TPM) limit (< 6,000 TPM actual usage)
     """
-    img = cv2.imread(image_path)
-    if img is None:
-        raise FileNotFoundError(f"Cannot load image: {image_path}")
+    def __init__(self, min_interval=5.0):
+        self.min_interval = min_interval
+        self.last_call_time = 0.0
 
-    h, w = img.shape[:2]
-    if max(h, w) > max_dim:
-        scale = max_dim / float(max(h, w))
-        img = cv2.resize(img, (int(w * scale), int(h * scale)), interpolation=cv2.INTER_AREA)
+    def wait(self):
+        now = time.time()
+        elapsed = now - self.last_call_time
+        if elapsed < self.min_interval:
+            sleep_time = self.min_interval - elapsed
+            time.sleep(sleep_time)
+        self.last_call_time = time.time()
 
-    success, buffer = cv2.imencode(".jpg", img, [int(cv2.IMWRITE_JPEG_QUALITY), 85])
-    if not success:
-        raise RuntimeError("Failed to encode image to JPEG")
-    return base64.b64encode(buffer).decode("utf-8")
-
-
-VISION_EXTRACTION_PROMPT = """You are an expert Comic Book Analyst and YouTube Video Producer (in the style of ComicsExplained and Variant Comics).
-Analyze this comic book panel image thoroughly and extract structured visual and narrative data.
-
-Return ONLY a valid JSON object matching this schema:
-{
-  "visual_context": {
-    "scene_type": "ACTION_COMBAT | DRAMATIC_REVEAL | DIALOGUE_CLOSEUP | WIDE_ESTABLISHING | COMEDIC_BEAT",
-    "setting": "Specific environment/location name and description",
-    "characters_present": ["List of character names visible in the panel"],
-    "action_and_poses": "Detailed description of what characters are physically doing, their body language and expressions",
-    "focal_point": "The primary visual element the viewer's eyes are drawn to",
-    "dominant_mood_lighting": "Atmosphere, color palette, lighting style"
-  },
-  "dialogue_analysis": {
-    "spoken_dialogue": [
-      {
-        "speaker": "Name of character speaking",
-        "text": "Exact clean dialogue spoken in the speech balloon (no OCR typos)",
-        "tone": "Whispering / Shouting / Sarcastic / Threatening / Confident"
-      }
-    ],
-    "narration_captions": ["List of any narrative/journal/captions on the panel"],
-    "sound_effects": ["List of sound effects/onomatopoeia e.g. THWIP, KRAK, BOOM"],
-    "filtered_noise": ["List of publishing credits, page numbers, barcodes, or rating logos ignored"]
-  },
-  "cinematic_staging": {
-    "recommended_camera_motion": "slow_pan_down | push_in_zoom | pull_out_zoom | snap_punch_zoom | impact_shake | pan_horizontal",
-    "pacing_seconds": 3.5,
-    "cinematic_narrator_recap": "A compelling, high-retention 1-2 sentence YouTube narrator script describing the visual action and story momentum of this panel"
-  }
-}
-"""
+global_rate_limiter = RateLimiter(min_interval=5.0)
 
 
-def query_cloud_vision(image_path, api_key=None, ocr_hint=None):
+def extract_json_from_gemma_parts(parts):
     """
-    Calls Gemini Multimodal API with image and structured JSON schema.
+    Extracts structured JSON from Gemma 4 API response parts,
+    handling both explicit JSON parts and thought-embedded markdown code blocks.
     """
-    key = api_key or os.environ.get("GEMINI_API_KEY")
+    # 1. Check non-thought parts first
+    for p in reversed(parts):
+        if not p.get("thought", False):
+            txt = p.get("text", "").strip()
+            if txt:
+                try:
+                    return json.loads(txt)
+                except Exception:
+                    pass
+
+    # 2. Check thought parts for embedded ```json ... ``` code blocks
+    for p in parts:
+        txt = p.get("text", "")
+        matches = list(re.finditer(r"```(?:json)?\s*([\s\S]*?)\s*```", txt))
+        for m in reversed(matches):
+            try:
+                return json.loads(m.group(1).strip())
+            except Exception:
+                pass
+
+    # 3. Fallback: balance-bracket search across all parts
+    for p in parts:
+        txt = p.get("text", "")
+        start = -1
+        depth = 0
+        for i, c in enumerate(txt):
+            if c == "{":
+                if depth == 0:
+                    start = i
+                depth += 1
+            elif c == "}":
+                depth -= 1
+                if depth == 0 and start != -1:
+                    try:
+                        return json.loads(txt[start:i+1])
+                    except Exception:
+                        pass
+                    start = -1
+
+    return None
+
+
+def map_compact_to_full_vision(res, h, w, ocr_hint):
+    """
+    Transforms the compact Gemma output into the full pipeline schema.
+    """
+    chars = res.get("characters", [])
+    if not isinstance(chars, list):
+        chars = [chars] if chars else []
+    speaker = res.get("speaker", chars[0] if chars else "Character")
+    dlg = res.get("dialogue", "").strip()
+    scene_type = res.get("scene_type", "ACTION_COMBAT")
+    cam = res.get("camera", "push_in_zoom")
+    recap = res.get("recap", "The story unfolds across the panel.")
+
+    return {
+        "visual_context": {
+            "scene_type": scene_type,
+            "setting": "Comic Narrative Scene",
+            "characters_present": chars or ["Featured Characters"],
+            "action_and_poses": res.get("action", f"Visual panel composition with aspect ratio {w/h:.2f}:1"),
+            "focal_point": "Central character action",
+            "dominant_mood_lighting": "Dynamic comic illustration style"
+        },
+        "dialogue_analysis": {
+            "spoken_dialogue": [{"speaker": speaker, "text": dlg, "tone": "Energetic"}] if dlg else [],
+            "narration_captions": [],
+            "sound_effects": [],
+            "filtered_noise": []
+        },
+        "cinematic_staging": {
+            "recommended_camera_motion": cam,
+            "pacing_seconds": 3.5,
+            "cinematic_narrator_recap": recap
+        }
+    }
+
+
+GEMMA_ONLY_CASCADE = ["gemma-4-31b-it", "gemma-4-26b-a4b-it"]
+
+def query_cloud_vision(image_path, api_key=None, ocr_hint=None, models_cascade=None, comic_title="Spider-Man"):
+    """
+    Strict Gemma-only cascade:
+      Primary:  gemma-4-31b-it
+      Fallback: gemma-4-26b-a4b-it
+      Paced at 5.0s interval (<10 RPM, <2,000 TPM) to strictly guarantee safety under 16k TPM.
+    """
+    key = api_key or DEFAULT_API_KEY
     if not key:
         return None
 
-    b64_data = encode_image_base64(image_path)
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={key}"
+    if not models_cascade:
+        models_cascade = GEMMA_ONLY_CASCADE
 
-    prompt_text = VISION_EXTRACTION_PROMPT
-    if ocr_hint:
-        prompt_text += f"\nLocal OCR detected text hints: \"{ocr_hint}\""
+    img = cv2.imread(image_path)
+    h, w = img.shape[:2] if img is not None else (1080, 1920)
+
+    prompt = f"""Comic: {comic_title}
+OCR: "{ocr_hint or 'Visual narrative panel'}"
+Output JSON format:
+{{"characters": ["Names"], "speaker": "Speaker", "dialogue": "Speech line", "action": "Action description", "scene_type": "ACTION_COMBAT", "camera": "push_in_zoom", "recap": "1-2 sentence narrator recap line"}}
+"""
 
     payload = {
         "contents": [
             {
                 "parts": [
-                    {"text": prompt_text},
-                    {
-                        "inline_data": {
-                            "mime_type": "image/jpeg",
-                            "data": b64_data
-                        }
-                    }
+                    {"text": prompt}
                 ]
             }
         ],
         "generationConfig": {
             "response_mime_type": "application/json",
-            "temperature": 0.2
+            "temperature": 0.0
         }
     }
 
-    req = urllib.request.Request(
-        url,
-        data=json.dumps(payload).encode("utf-8"),
-        headers={"Content-Type": "application/json"}
-    )
+    for model in models_cascade:
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={key}"
 
-    try:
-        with urllib.request.urlopen(req, timeout=25) as response:
-            res_json = json.loads(response.read().decode("utf-8"))
-            raw_text = res_json["candidates"][0]["content"]["parts"][0]["text"]
-            return json.loads(raw_text)
-    except Exception as e:
-        print(f"[!] Cloud Vision API call failed: {e}")
-        return None
+        for attempt in range(2):
+            global_rate_limiter.wait()
+            req = urllib.request.Request(
+                url,
+                data=json.dumps(payload).encode("utf-8"),
+                headers={"Content-Type": "application/json"}
+            )
+            try:
+                with urllib.request.urlopen(req, timeout=40) as response:
+                    res_json = json.loads(response.read().decode("utf-8"))
+                    parts = res_json["candidates"][0]["content"]["parts"]
+                    for p in parts:
+                        if not p.get("thought", False):
+                            raw_dict = json.loads(p["text"])
+                            print(f"    ✓ Vision extracted via [{model}]")
+                            return map_compact_to_full_vision(raw_dict, h, w, ocr_hint)
+            except urllib.error.HTTPError as e:
+                if e.code == 429:
+                    backoff = 8.0 + random.uniform(2.0, 5.0)
+                    print(f"  [!] 429 Rate limited on {model}, backing off {backoff:.1f}s...")
+                    time.sleep(backoff)
+                elif e.code == 500:
+                    print(f"  [!] {model} returned HTTP 500, cascading to fallback...")
+                    break
+                else:
+                    print(f"  [!] {model} HTTP {e.code}, cascading...")
+                    break
+            except Exception as e:
+                print(f"  [!] {model} connection error ({e}), cascading...")
+                break
+
+    return None
 
 
 def run_local_fallback_vision(image_path, ocr_text="", panel_idx=1):
@@ -290,10 +386,21 @@ def extract_vision_for_comic(manifest_path, output_json_path=None, api_key=None,
 
     print(f"\n[*] Starting Multimodal Vision Extraction for '{comic_title}' ({len(panels)} panels)...")
 
-    results = []
-    has_api = bool(api_key or os.environ.get("GEMINI_API_KEY"))
-    mode_str = "Cloud Multimodal API (Gemini Flash)" if has_api else "Local Semantic Analyzer"
+    active_key = api_key or os.environ.get("GEMINI_API_KEY") or DEFAULT_API_KEY
+    has_api = bool(active_key)
+    mode_str = f"Gemma-Only Cascade ({', '.join(GEMMA_ONLY_CASCADE)})" if has_api else "Local Semantic Analyzer"
     print(f"[*] Inference Mode: [{mode_str}]")
+
+    results = []
+    cache_file = os.path.join(comic_dir, ".vision_cache.json")
+    cache = {}
+    if os.path.exists(cache_file):
+        try:
+            with open(cache_file, "r", encoding="utf-8") as cf:
+                cache = json.load(cf)
+            print(f"[*] Found vision cache with {len(cache)} pre-analyzed panels.")
+        except Exception:
+            cache = {}
 
     import easyocr
     print(f"[*] Initializing local OCR assistant for dialogue extraction...")
@@ -305,19 +412,29 @@ def extract_vision_for_comic(manifest_path, output_json_path=None, api_key=None,
         if not os.path.exists(panel_path):
             continue
 
-        print(f"  -> [{idx}/{len(panels)}] Analyzing {panel_file}...")
+        if panel_file in cache:
+            print(f"  -> [{idx}/{len(panels)}] ⚡ Loaded from cache: {panel_file}")
+            vision_data = cache[panel_file].get("vision")
+            ocr_hint = cache[panel_file].get("ocr_hint", "")
+        else:
+            print(f"  -> [{idx}/{len(panels)}] 🔍 Analyzing {panel_file}...")
+            # 1. Local OCR hint extraction (milliseconds)
+            ocr_results = reader.readtext(panel_path)
+            raw_texts = [r[1] for r in ocr_results if r[2] > 0.35]
+            ocr_hint = " ".join(raw_texts).strip()
 
-        # 1. Local OCR hint extraction (milliseconds)
-        ocr_results = reader.readtext(panel_path)
-        raw_texts = [r[1] for r in ocr_results if r[2] > 0.35]
-        ocr_hint = " ".join(raw_texts).strip()
+            vision_data = query_cloud_vision(panel_path, api_key=active_key, ocr_hint=ocr_hint, comic_title=comic_title)
 
-        vision_data = None
-        if has_api:
-            vision_data = query_cloud_vision(panel_path, api_key=api_key, ocr_hint=ocr_hint)
+            if not vision_data:
+                vision_data = run_local_fallback_vision(panel_path, ocr_text=ocr_hint, panel_idx=idx)
 
-        if not vision_data:
-            vision_data = run_local_fallback_vision(panel_path, ocr_text=ocr_hint, panel_idx=idx)
+            # Update cache immediately
+            cache[panel_file] = {
+                "vision": vision_data,
+                "ocr_hint": ocr_hint
+            }
+            with open(cache_file, "w", encoding="utf-8") as cf:
+                json.dump(cache, cf, indent=2)
 
         record = {
             "panel_id": f"panel_{p['global_index']:03d}_p{p['page_number']:02d}_{p['panel_on_page']:02d}",

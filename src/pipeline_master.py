@@ -163,13 +163,13 @@ def synthesize_voices_for_script(script_path, audio_out_dir):
     print(f"[+] All {len(scenes)} distinct voiceover tracks generated in: {audio_out_dir}")
     return audio_paths
 
-def run_render_step(script_path, audio_dir, clips_dir, final_mp4, bgm_path=None):
+def run_render_step(script_path, audio_dir, clips_dir, final_mp4, bgm_path=None, fps=60):
     os.makedirs(clips_dir, exist_ok=True)
     with open(script_path, "r", encoding="utf-8") as f:
         scenes = json.load(f)
 
     clip_paths = []
-    print(f"[*] Rendering 1080p centered zero-jitter camera motion for {len(scenes)} scenes...")
+    print(f"[*] Rendering 1080p centered zero-jitter camera motion for {len(scenes)} scenes at {fps} FPS...")
 
     for sc in scenes:
         sid = sc["scene_id"]
@@ -185,7 +185,7 @@ def run_render_step(script_path, audio_dir, clips_dir, final_mp4, bgm_path=None)
             audio_path=wav_path,
             output_clip_path=clip_path,
             mode=mode,
-            fps=30,
+            fps=fps,
             out_w=1920,
             out_h=1080
         )
@@ -203,6 +203,7 @@ def main():
     parser.add_argument("--bgm", default="assets/bgm_action.wav", help="Background music")
     parser.add_argument("--fps", type=int, default=60, help="Video frame rate (30 or 60)")
     parser.add_argument("--api-key", default=None, help="Gemini API key for cloud vision")
+    parser.add_argument("--style", choices=["hybrid", "recap_only", "dialogue_only"], default="hybrid", help="Script generation style")
 
     args = parser.parse_args()
     os.makedirs(args.work_dir, exist_ok=True)
@@ -241,7 +242,11 @@ def main():
     # Step 4: Cohesive Script Generation
     if args.step in ["script", "all"]:
         print("\n==================== [STEP 4: SCRIPT GENERATION] ====================")
-        generate_cohesive_script(output_script_path=script_json)
+        generate_cohesive_script(
+            vision_json_path=vision_json_path,
+            output_script_path=script_json,
+            style=args.style
+        )
 
     # Step 5: Multi-voice Casting TTS
     if args.step in ["voice", "all"]:
@@ -251,7 +256,7 @@ def main():
     # Step 6: 1080p Video Render
     if args.step in ["render", "all"]:
         print(f"\n==================== [STEP 6: 1080P {args.fps}FPS CINEMATIC RENDER] ====================")
-        run_render_step(script_json, audio_dir, clips_dir, args.output_video, bgm_path=args.bgm)
+        run_render_step(script_json, audio_dir, clips_dir, args.output_video, bgm_path=args.bgm, fps=args.fps)
 
     print("\n[SUCCESS] Master pipeline workflow completed successfully!")
 
