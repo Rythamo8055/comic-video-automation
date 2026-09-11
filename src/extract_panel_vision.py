@@ -26,6 +26,9 @@ import numpy as np
 import time
 import re
 import random
+import threading
+import collections
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if PROJECT_ROOT not in sys.path:
@@ -47,25 +50,56 @@ def load_api_key():
 DEFAULT_API_KEY = load_api_key()
 DISABLED_MULTIMODAL_MODELS = set()
 
-class RateLimiter:
+class SlidingWindowRateLimiter:
     """
-    Enforces strict rate limits:
-      - Max 12 Requests Per Minute (RPM) -> ~5.0s minimum interval (safely below 30 RPM limit)
-      - Strictly respects 16,000 Tokens Per Minute (TPM) limit (< 6,000 TPM actual usage)
+    Thread-safe Sliding Window Rate Limiter calibrated against empirical API data:
+      - Max 12.0 Requests Per Minute (RPM) -> Safely below 30 RPM ceiling
+      - Max 12,500 Tokens Per Minute (TPM) -> Safely below 16,000 TPM ceiling (with ~1,050 tok/panel)
+      - Minimum 4.8s spacing between dispatches -> Prevents instantaneous HTTP gateway burst limits
     """
-    def __init__(self, min_interval=5.0):
+    def __init__(self, max_rpm=12, max_tpm=12500, min_interval=4.8):
+        self.max_rpm = max_rpm
+        self.max_tpm = max_tpm
         self.min_interval = min_interval
-        self.last_call_time = 0.0
+        self.lock = threading.Lock()
+        self.request_timestamps = collections.deque()
+        self.token_history = collections.deque()
+        self.last_dispatch_time = 0.0
 
-    def wait(self):
-        now = time.time()
-        elapsed = now - self.last_call_time
-        if elapsed < self.min_interval:
-            sleep_time = self.min_interval - elapsed
-            time.sleep(sleep_time)
-        self.last_call_time = time.time()
+    def acquire(self, estimated_tokens=1050):
+        with self.lock:
+            while True:
+                now = time.time()
+                while self.request_timestamps and self.request_timestamps[0] <= now - 60.0:
+                    self.request_timestamps.popleft()
+                while self.token_history and self.token_history[0][0] <= now - 60.0:
+                    self.token_history.popleft()
 
-global_rate_limiter = RateLimiter(min_interval=5.0)
+                rpm_ok = len(self.request_timestamps) < self.max_rpm
+                current_tokens = sum(t for _, t in self.token_history)
+                tpm_ok = (current_tokens + estimated_tokens) <= self.max_tpm
+                spacing_ok = (now - self.last_dispatch_time) >= self.min_interval
+
+                if rpm_ok and tpm_ok and spacing_ok:
+                    self.request_timestamps.append(now)
+                    self.token_history.append((now, estimated_tokens))
+                    self.last_dispatch_time = now
+                    return now
+
+                wait_times = []
+                if not spacing_ok:
+                    wait_times.append(self.min_interval - (now - self.last_dispatch_time))
+                if not rpm_ok:
+                    wait_times.append(self.request_timestamps[0] + 60.0 - now)
+                if not tpm_ok:
+                    wait_times.append(self.token_history[0][0] + 60.0 - now)
+
+                sleep_dur = max(0.05, min(wait_times))
+                self.lock.release()
+                time.sleep(sleep_dur)
+                self.lock.acquire()
+
+global_rate_limiter = SlidingWindowRateLimiter(max_rpm=12, max_tpm=12500, min_interval=4.8)
 
 
 def extract_json_from_gemma_parts(parts):
@@ -205,7 +239,7 @@ Output JSON:
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={key}"
 
         for attempt in range(2):
-            global_rate_limiter.wait()
+            global_rate_limiter.acquire(estimated_tokens=1050)
             req = urllib.request.Request(
                 url,
                 data=json.dumps(payload).encode("utf-8"),
@@ -225,8 +259,8 @@ Output JSON:
                     backoff = 8.0 + random.uniform(2.0, 5.0)
                     print(f"  [!] 429 Rate limited on {model}, backing off {backoff:.1f}s...")
                     time.sleep(backoff)
-                elif e.code == 500:
-                    print(f"  [!] {model} returned HTTP 500, cascading to fallback...")
+                elif e.code in (500, 502, 503, 504):
+                    print(f"  [!] {model} returned HTTP {e.code}, cascading to fallback...")
                     break
                 else:
                     print(f"  [!] {model} HTTP {e.code}, cascading...")
@@ -379,11 +413,11 @@ def generate_vision_dashboard_html(panels_data, output_html_path, comic_title="C
     print(f"[+] Vision extraction dashboard generated: {output_html_path}")
 
 
-def extract_vision_for_comic(manifest_path, output_json_path=None, api_key=None, max_panels=None):
+def extract_vision_for_comic(manifest_path, output_json_path=None, api_key=None, max_panels=None, concurrency=8):
     """
     Main extraction orchestrator:
-    Iterates through panels in manifest.json, calls Cloud Vision (or fallback),
-    and saves comic_scene_vision.json and dashboard.
+    Processes panels using a high-throughput, rate-controlled worker pool.
+    Saves comic_scene_vision.json and dashboard.
     """
     with open(manifest_path, "r", encoding="utf-8") as f:
         manifest = json.load(f)
@@ -400,9 +434,8 @@ def extract_vision_for_comic(manifest_path, output_json_path=None, api_key=None,
     active_key = api_key or os.environ.get("GEMINI_API_KEY") or DEFAULT_API_KEY
     has_api = bool(active_key)
     mode_str = f"Gemma-Only Cascade ({', '.join(GEMMA_ONLY_CASCADE)})" if has_api else "Local Semantic Analyzer"
-    print(f"[*] Inference Mode: [{mode_str}]")
+    print(f"[*] Inference Mode: [{mode_str}] | Concurrency: [{concurrency} workers]")
 
-    results = []
     cache_file = os.path.join(comic_dir, ".vision_cache.json")
     cache = {}
     if os.path.exists(cache_file):
@@ -417,6 +450,11 @@ def extract_vision_for_comic(manifest_path, output_json_path=None, api_key=None,
     print(f"[*] Initializing local OCR assistant for dialogue extraction...")
     reader = easyocr.Reader(['en'], gpu=False)
 
+    cache_lock = threading.Lock()
+    ocr_lock = threading.Lock()
+    panel_records = {}
+    to_process = []
+
     for idx, p in enumerate(panels, 1):
         panel_file = p["filename"]
         panel_path = os.path.join(comic_dir, panel_file)
@@ -424,30 +462,58 @@ def extract_vision_for_comic(manifest_path, output_json_path=None, api_key=None,
             continue
 
         if panel_file in cache:
-            print(f"  -> [{idx}/{len(panels)}] ⚡ Loaded from cache: {panel_file}")
             vision_data = cache[panel_file].get("vision")
             ocr_hint = cache[panel_file].get("ocr_hint", "")
+            panel_records[panel_file] = {
+                "panel_id": f"panel_{p['global_index']:03d}_p{p['page_number']:02d}_{p['panel_on_page']:02d}",
+                "global_index": p["global_index"],
+                "page_number": p["page_number"],
+                "panel_on_page": p["panel_on_page"],
+                "filename": panel_file,
+                "panel_relative_path": panel_file,
+                "dimensions": {"width": p["width"], "height": p["height"]},
+                "bbox": p["bbox"],
+                "raw_ocr_text": ocr_hint,
+                "vision": vision_data
+            }
         else:
-            print(f"  -> [{idx}/{len(panels)}] 🔍 Analyzing {panel_file}...")
-            # 1. Local OCR hint extraction (milliseconds)
+            to_process.append((idx, p))
+
+    print(f"[*] Pre-cached: {len(panel_records)}/{len(panels)} panels. To analyze: {len(to_process)} panels.")
+
+    completed_count = len(panel_records)
+    total_panels = len(panels)
+
+    def process_panel_task(item):
+        nonlocal completed_count
+        idx, p = item
+        panel_file = p["filename"]
+        panel_path = os.path.join(comic_dir, panel_file)
+
+        # Thread-safe OCR extraction
+        with ocr_lock:
             ocr_results = reader.readtext(panel_path)
             raw_texts = [r[1] for r in ocr_results if r[2] > 0.35]
             ocr_hint = " ".join(raw_texts).strip()
 
-            vision_data = query_cloud_vision(panel_path, api_key=active_key, ocr_hint=ocr_hint, comic_title=comic_title)
+        print(f"  -> [{idx}/{total_panels}] 🔍 Analyzing {panel_file}...")
+        vision_data = query_cloud_vision(panel_path, api_key=active_key, ocr_hint=ocr_hint, comic_title=comic_title)
 
-            if not vision_data:
-                vision_data = run_local_fallback_vision(panel_path, ocr_text=ocr_hint, panel_idx=idx)
+        if not vision_data:
+            vision_data = run_local_fallback_vision(panel_path, ocr_text=ocr_hint, panel_idx=idx)
 
-            # Update cache immediately
+        # Thread-safe atomic cache update
+        with cache_lock:
             cache[panel_file] = {
                 "vision": vision_data,
                 "ocr_hint": ocr_hint
             }
             with open(cache_file, "w", encoding="utf-8") as cf:
                 json.dump(cache, cf, indent=2)
+            completed_count += 1
+            print(f"  [✓] [{completed_count}/{total_panels}] Saved to cache: {panel_file}")
 
-        record = {
+        return {
             "panel_id": f"panel_{p['global_index']:03d}_p{p['page_number']:02d}_{p['panel_on_page']:02d}",
             "global_index": p["global_index"],
             "page_number": p["page_number"],
@@ -459,7 +525,17 @@ def extract_vision_for_comic(manifest_path, output_json_path=None, api_key=None,
             "raw_ocr_text": ocr_hint,
             "vision": vision_data
         }
-        results.append(record)
+
+    if to_process:
+        with ThreadPoolExecutor(max_workers=concurrency) as executor:
+            future_to_panel = {executor.submit(process_panel_task, item): item[1]["filename"] for item in to_process}
+            for fut in as_completed(future_to_panel):
+                rec = fut.result()
+                if rec:
+                    panel_records[rec["filename"]] = rec
+
+    # Assemble results in exact original sequential order
+    results = [panel_records[p["filename"]] for p in panels if p["filename"] in panel_records]
 
     # Save output JSON
     if not output_json_path:
@@ -483,6 +559,7 @@ if __name__ == "__main__":
     parser.add_argument("--output", default=None, help="Path for output comic_scene_vision.json")
     parser.add_argument("--api-key", default=None, help="Gemini API key (optional, uses GEMINI_API_KEY env if not specified)")
     parser.add_argument("--max-panels", type=int, default=None, help="Limit number of panels for testing")
+    parser.add_argument("--concurrency", type=int, default=8, help="Number of concurrent worker threads (default: 8)")
     args = parser.parse_args()
 
-    extract_vision_for_comic(args.manifest, output_json_path=args.output, api_key=args.api_key, max_panels=args.max_panels)
+    extract_vision_for_comic(args.manifest, output_json_path=args.output, api_key=args.api_key, max_panels=args.max_panels, concurrency=args.concurrency)
