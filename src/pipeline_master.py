@@ -24,6 +24,7 @@ if PROJECT_ROOT not in sys.path:
 
 from src.extract_all_comic_panels import extract_comic_panels
 from src.evaluate_panel_extraction import evaluate_page_extraction
+from src.extract_panel_vision import extract_vision_for_comic
 from src.generate_multivoice_script import generate_cohesive_script
 from src.render_zero_jitter_video import render_scene_clip, assemble_final_video
 
@@ -194,13 +195,14 @@ def run_render_step(script_path, audio_dir, clips_dir, final_mp4, bgm_path=None)
 
 def main():
     parser = argparse.ArgumentParser(description="Master Modular Comic-to-Video Automation Engine.")
-    parser.add_argument("--step", choices=["extract", "evaluate", "script", "voice", "render", "all"], default="all", help="Step to run")
+    parser.add_argument("--step", choices=["extract", "evaluate", "vision", "script", "voice", "render", "all"], default="all", help="Step to run")
     parser.add_argument("--comic", default="data/spider_man_001/pages", help="Path to pages directory, .cbz, or .cbr file")
     parser.add_argument("--title", default="Spider_Man_Challenges_of_Doom_001", help="Comic title identifier")
     parser.add_argument("--work-dir", default="output/modular_production", help="Working output directory")
     parser.add_argument("--output-video", default="output/modular_production/spiderman_8panel_multivoice_smooth_1080p.mp4", help="Final video destination")
     parser.add_argument("--bgm", default="assets/bgm_action.wav", help="Background music")
     parser.add_argument("--fps", type=int, default=60, help="Video frame rate (30 or 60)")
+    parser.add_argument("--api-key", default=None, help="Gemini API key for cloud vision")
 
     args = parser.parse_args()
     os.makedirs(args.work_dir, exist_ok=True)
@@ -210,6 +212,7 @@ def main():
 
     target_dir = os.path.join(args.work_dir, args.title)
     manifest_path = os.path.join(target_dir, "manifest.json")
+    vision_json_path = os.path.join(target_dir, "comic_scene_vision.json")
     script_json = os.path.join(args.work_dir, "multivoice_script.json")
     audio_dir = os.path.join(args.work_dir, "voiceovers")
     clips_dir = os.path.join(args.work_dir, "clips")
@@ -227,19 +230,27 @@ def main():
             manifest_path = os.path.join(target_dir, "manifest.json")
         run_evaluation_step(pages_dir, manifest_path)
 
-    # Step 3: Script Generation
+    # Step 3: Multimodal Vision & Scene Understanding
+    if args.step in ["vision", "all"]:
+        print("\n==================== [STEP 3: MULTIMODAL VISION EXTRACTION] ====================")
+        if not os.path.exists(manifest_path):
+            target_dir, manifest = run_extraction_step(pages_dir, args.title, args.work_dir)
+            manifest_path = os.path.join(target_dir, "manifest.json")
+        extract_vision_for_comic(manifest_path, output_json_path=vision_json_path, api_key=args.api_key)
+
+    # Step 4: Cohesive Script Generation
     if args.step in ["script", "all"]:
-        print("\n==================== [STEP 3: COHESIVE SCRIPT] ====================")
+        print("\n==================== [STEP 4: SCRIPT GENERATION] ====================")
         generate_cohesive_script(output_script_path=script_json)
 
-    # Step 4: Multi-voice Casting TTS
+    # Step 5: Multi-voice Casting TTS
     if args.step in ["voice", "all"]:
-        print("\n==================== [STEP 4: MULTI-VOICE CASTING TTS] ====================")
+        print("\n==================== [STEP 5: MULTI-VOICE CASTING TTS] ====================")
         synthesize_voices_for_script(script_json, audio_dir)
 
-    # Step 5: Render Video
+    # Step 6: 1080p Video Render
     if args.step in ["render", "all"]:
-        print(f"\n==================== [STEP 5: 1080P {args.fps}FPS CINEMATIC RENDER] ====================")
+        print(f"\n==================== [STEP 6: 1080P {args.fps}FPS CINEMATIC RENDER] ====================")
         run_render_step(script_json, audio_dir, clips_dir, args.output_video, bgm_path=args.bgm)
 
     print("\n[SUCCESS] Master pipeline workflow completed successfully!")
