@@ -23,6 +23,32 @@ if PROJECT_ROOT not in sys.path:
 if os.getcwd() not in sys.path:
     sys.path.insert(0, os.getcwd())
 
+def load_environment_keys():
+    """Loads API keys from candidate .env files into os.environ."""
+    candidates = [
+        os.path.join(os.getcwd(), '.env'),
+        os.path.join(PROJECT_ROOT, '.env'),
+        os.path.expanduser('~/.config/comic-studio/.env'),
+        os.path.expanduser('~/.comic-studio.env')
+    ]
+    for env_file in candidates:
+        if os.path.exists(env_file):
+            try:
+                with open(env_file, 'r', encoding='utf-8') as f:
+                    for line in f:
+                        line = line.strip()
+                        if line and not line.startswith('#') and '=' in line:
+                            k, v = line.split('=', 1)
+                            k = k.strip()
+                            v = v.strip().strip('"').strip("'")
+                            if k and not os.environ.get(k):
+                                os.environ[k] = v
+            except Exception:
+                pass
+
+load_environment_keys()
+
+
 from src.extract_all_comic_panels import extract_comic_panels
 from src.extract_panel_vision import extract_vision_for_comic
 from src.generate_multivoice_script import generate_cohesive_script
@@ -203,8 +229,8 @@ def cmd_doctor(args):
         print("[*] Kyutai Pocket-TTS: \033[1;31m✗ Missing (pip install pocket-tts)\033[0m")
         
     # 6. Cloud Vision API Status
-    groq_key = os.environ.get('GROQ_API_KEY') or (os.path.exists('.env') and 'GROQ_API_KEY' in open('.env').read())
-    gemini_key = os.environ.get('GEMINI_API_KEY') or (os.path.exists('.env') and 'GEMINI_API_KEY' in open('.env').read())
+    groq_key = os.environ.get('GROQ_API_KEY')
+    gemini_key = os.environ.get('GEMINI_API_KEY')
     status_groq = "\033[1;32m✓ Configured (Qwen 3-Act Active)\033[0m" if groq_key else "\033[1;33m! Unset (Local Rule Fallback Active)\033[0m"
     status_gemini = "\033[1;32m✓ Configured\033[0m" if gemini_key else "\033[1;33m! Unset (Local EasyOCR Active)\033[0m"
     print(f"[*] Groq API Key:      {status_groq}")
@@ -213,7 +239,7 @@ def cmd_doctor(args):
     print("\n\033[1;32m[✓] System check complete!\033[0m Run \033[1;36mcomic-studio run --help\033[0m to start.\n")
 
 def cmd_voices(args):
-    manifest_file = "output/pocket_tts_samples/manifest.json"
+    manifest_file = os.path.join(PROJECT_ROOT, "output/pocket_tts_samples/manifest.json")
     voices = []
     if os.path.exists(manifest_file):
         with open(manifest_file, "r") as f:
