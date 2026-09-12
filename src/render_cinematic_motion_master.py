@@ -26,10 +26,20 @@ def ease_in_out_sine(t):
 def get_h264_encoder():
     try:
         res = subprocess.check_output(["ffmpeg", "-encoders"], text=True, stderr=subprocess.DEVNULL)
+        # 1. macOS Apple Silicon / Intel Hardware Encoder
+        if sys.platform == "darwin" and "h264_videotoolbox" in res:
+            return "h264_videotoolbox"
+        # 2. Windows NVIDIA / Intel Hardware Encoders
+        if sys.platform == "win32":
+            if "h264_nvenc" in res:
+                return "h264_nvenc"
+            if "h264_qsv" in res:
+                return "h264_qsv"
+        # 3. Cross-platform software encoders
+        if "libx264" in res:
+            return "libx264"
         if "libopenh264" in res:
             return "libopenh264"
-        elif "libx264" in res:
-            return "libx264"
     except Exception:
         pass
     return "h264"
@@ -125,7 +135,20 @@ def render_cinematic_recap(script_json_path, audio_dir, output_mp4, bgm_path=Non
         sid = sc["scene_id"]
         wav_path = os.path.join(audio_dir, f"{sid}_narrator.wav")
         dur = get_audio_duration(wav_path)
-        img = cv2.imread(sc["panel_image"])
+        img_path = sc["panel_image"]
+        img = cv2.imread(img_path)
+        if img is None:
+            # Fallback 1: check same directory as script_json_path
+            sdir = os.path.dirname(os.path.abspath(script_json_path))
+            alt_path = os.path.join(sdir, os.path.basename(img_path))
+            img = cv2.imread(alt_path)
+            if img is None:
+                # Fallback 2: check nested comic folder
+                for root, _, files in os.walk(sdir):
+                    if os.path.basename(img_path) in files:
+                        alt_path = os.path.join(root, os.path.basename(img_path))
+                        img = cv2.imread(alt_path)
+                        break
         if img is None:
             raise FileNotFoundError(f"Missing image: {sc['panel_image']}")
             

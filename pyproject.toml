@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "comic-studio"
+version = "1.0.0"
+description = "Autonomous Multimodal Comic-to-Video Production Engine (0 MB VRAM / Pure CPU)"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "opencv-python>=4.8.0",
+    "numpy>=1.24.0",
+    "torch>=2.0.0",
+    "pocket-tts>=0.1.0",
+    "easyocr>=1.7.0",
+    "requests>=2.28.0",
+    "groq>=0.4.0",
+    "tqdm>=4.66.0"
+]
+
+[project.scripts]
+comic-studio = "src.cli:main"
