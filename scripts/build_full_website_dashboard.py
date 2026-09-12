@@ -237,7 +237,7 @@ mermaid_code = """flowchart TD
         S1_OUT --> S2_CANNY["OpenCV Canny + Morphology Filter"]
         S2_CANNY --> S2_EVAL{"Evaluation Gate: Text Cutoff?"}
         S2_EVAL -->|Fails Margin| S2_EXP["Auto-Expand Margins (+25px Padding)"]
-        S2_EXP --> S2_CANNY
+        S2_EXP --> S2_OUT
         S2_EVAL -->|Pass| S2_OUT["87 / 87 Clean Panels (*.png)"]
     end
 
@@ -272,7 +272,9 @@ mermaid_code = """flowchart TD
     end
 
     subgraph S7["STEP 7: 60 FPS SUB-PIXEL MOTION"]
-        S2_OUT & S4_OUT & S6_OUT --> S7_WARP["64-Bit Affine Sub-Pixel Camera Engine"]
+        S2_OUT --> S7_WARP["64-Bit Affine Sub-Pixel Camera Engine"]
+        S4_OUT --> S7_WARP
+        S6_OUT --> S7_WARP
         S7_WARP --> S7_AMBIENT["Ambient Blurred Fill (No Black Bars)"]
         S7_AMBIENT --> S7_ZOOM["1.35x Snap-Punch Action Zooms + Ken Burns"]
         S7_ZOOM --> S7_OUT["Rendered 1080p60 Episode Video (.mp4)"]
@@ -294,21 +296,34 @@ html_content = f"""<!DOCTYPE html>
   <title>Comic Video Automation — Master Pipeline & Voice Showcase</title>
   <script src="https://www.gstatic.com/antigravity/web/dev/tailwindcss.min.js"></script>
   <!-- Mermaid.js for Interactive Flowchart Rendering -->
-  <script type="module">
-    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
-    mermaid.initialize({{
-      startOnLoad: true,
-      theme: 'dark',
-      themeVariables: {{
-        primaryColor: '#059669',
-        primaryTextColor: '#ffffff',
-        primaryBorderColor: '#10b981',
-        lineColor: '#10b981',
-        secondaryColor: '#1e293b',
-        tertiaryColor: '#0f172a',
-        background: 'transparent',
-        fontFamily: 'sans-serif'
-      }}
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {{
+      mermaid.initialize({{
+        startOnLoad: true,
+        theme: 'base',
+        themeVariables: {{
+          darkMode: true,
+          background: '#090d16',
+          primaryColor: '#064e3b',
+          primaryTextColor: '#ecfdf5',
+          primaryBorderColor: '#10b981',
+          lineColor: '#10b981',
+          secondaryColor: '#1e293b',
+          secondaryTextColor: '#f8fafc',
+          secondaryBorderColor: '#3b82f6',
+          tertiaryColor: '#1e1b4b',
+          tertiaryTextColor: '#f8fafc',
+          tertiaryBorderColor: '#8b5cf6',
+          fontFamily: 'ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, sans-serif',
+          fontSize: '13px'
+        }},
+        flowchart: {{
+          curve: 'basis',
+          useMaxWidth: true,
+          htmlLabels: true
+        }}
+      }});
     }});
   </script>
   <style>
@@ -559,7 +574,7 @@ html_content = f"""<!DOCTYPE html>
         </div>
 
         <!-- 2. Mermaid.js Native Diagram View -->
-        <div id="diagram-mermaid-view" class="hidden space-y-4">
+        <div id="diagram-mermaid-view" class="space-y-4">
           <div class="bg-[var(--background)] p-4 sm:p-6 rounded-2xl border border-[var(--border)] overflow-x-auto">
             <div class="mermaid">
 {mermaid_code}
