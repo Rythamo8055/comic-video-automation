@@ -30,6 +30,10 @@ wheels/
 *.mp3
 *.cbz
 *.cbr
+!docs/*.mp4
+!docs/*.wav
+!docs/*.mp3
+!docs/*.jpg
 analysis/frames/
 analysis/comic_shots/
 analysis/sample_shots/

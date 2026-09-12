@@ -388,6 +388,9 @@ html_content = f"""<!DOCTYPE html>
         <button onclick="switchNav('diagram')" id="nav-diagram" class="nav-tab px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold bg-[var(--primary)] text-[var(--primary-foreground)] shadow-sm cursor-pointer">
           📊 Architecture Diagram
         </button>
+        <button onclick="switchNav('videodemo')" id="nav-videodemo" class="nav-tab px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold bg-[var(--background)] border border-[var(--border)] text-[var(--foreground)] hover:bg-[var(--card)] cursor-pointer">
+          🎥 60 FPS Video Demo (Audio + Photos)
+        </button>
         <button onclick="switchNav('pipeline')" id="nav-pipeline" class="nav-tab px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold bg-[var(--background)] border border-[var(--border)] text-[var(--foreground)] hover:bg-[var(--card)] cursor-pointer">
           🏗️ Pipeline Steps (1 to 8)
         </button>
@@ -585,6 +588,67 @@ html_content = f"""<!DOCTYPE html>
       </div>
     </section>
 
+    <!-- SECTION: 60 FPS VIDEO DEMO (AUDIO + PHOTOS COMBINED) -->
+    <section id="section-videodemo" class="space-y-6 hidden">
+      <div class="bg-[var(--card)] border border-[var(--border)] rounded-3xl p-6 sm:p-8 shadow-sm space-y-6">
+        <div class="flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <div class="flex items-center gap-2 mb-1">
+              <span class="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-purple-500/10 text-purple-500 border border-purple-500/20">
+                Step 7 & 8 Combined Demo
+              </span>
+              <span class="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">
+                60 FPS Constant Frame Rate • 1080p
+              </span>
+            </div>
+            <h2 class="text-2xl sm:text-3xl font-bold tracking-tight">Audio & Photos Combined Motion Video</h2>
+            <p class="text-sm text-[var(--muted-foreground)] mt-1">
+              Live rendered demo combining sliced comic panels, Pocket-TTS voice narration, tension background groove (-6dB sidechain ducking), and 64-bit sub-pixel motion.
+            </p>
+          </div>
+
+          <div class="flex items-center gap-3">
+            <a href="cinematic_motion_demo.mp4" download class="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold bg-[var(--primary)] text-[var(--primary-foreground)] shadow-sm hover:opacity-95">
+              <span>⬇️</span>
+              <span>Download 1080p Demo (.mp4)</span>
+            </a>
+          </div>
+        </div>
+
+        <!-- Video Player Card -->
+        <div class="bg-black rounded-2xl overflow-hidden border border-purple-500/30 shadow-2xl">
+          <video id="demoVideoPlayer" src="cinematic_motion_demo.mp4" controls playsinline preload="metadata" poster="frame_15s.jpg" class="w-full max-h-[560px] object-contain mx-auto"></video>
+        </div>
+
+        <!-- Video Tech Breakdown Grid -->
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-4 pt-4 border-t border-[var(--border)]">
+          <div class="p-4 rounded-xl bg-[var(--background)] border border-[var(--border)]">
+            <div class="text-xs font-mono text-emerald-500 font-bold mb-1">01. PHOTO PANELS</div>
+            <div class="text-sm font-bold text-[var(--foreground)]">87 OpenCV Clean Slices</div>
+            <p class="text-xs text-[var(--muted-foreground)] mt-1">Canny edge detection with +25px padding margin gate. Zero clipped text bubbles.</p>
+          </div>
+
+          <div class="p-4 rounded-xl bg-[var(--background)] border border-[var(--border)]">
+            <div class="text-xs font-mono text-blue-500 font-bold mb-1">02. VOICE NARRATION</div>
+            <div class="text-xs font-bold text-[var(--foreground)]">Pocket-TTS Stuart Bell</div>
+            <p class="text-xs text-[var(--muted-foreground)] mt-1">A2-B1 simple English narration with +5dB presence EQ at 3.8kHz to cut through music.</p>
+          </div>
+
+          <div class="p-4 rounded-xl bg-[var(--background)] border border-[var(--border)]">
+            <div class="text-xs font-mono text-amber-500 font-bold mb-1">03. AUDIO DUCKING</div>
+            <div class="text-xs font-bold text-[var(--foreground)]">Dynamic Sidechain -6dB</div>
+            <p class="text-xs text-[var(--muted-foreground)] mt-1">FFmpeg amix filter ducks narrative tension music track automatically when voice speaks.</p>
+          </div>
+
+          <div class="p-4 rounded-xl bg-[var(--background)] border border-[var(--border)]">
+            <div class="text-xs font-mono text-purple-500 font-bold mb-1">04. 60 FPS CAMERA</div>
+            <div class="text-xs font-bold text-[var(--foreground)]">Sub-Pixel Affine Engine</div>
+            <p class="text-xs text-[var(--muted-foreground)] mt-1">Cubic interpolation cv2.INTER_CUBIC, snap-punch zooms (1.35x), and white flash transitions.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <!-- SECTION 1: FULL PIPELINE STEPS (1 TO 8) -->
     <section id="section-pipeline" class="space-y-6 hidden">
       <div class="flex items-center justify-between">
@@ -763,7 +827,7 @@ html_content = f"""<!DOCTYPE html>
     let activeBtn = null;
 
     function switchNav(tab) {{
-      ['diagram', 'pipeline', 'emotion', 'masters', 'catalog'].forEach(t => {{
+      ['diagram', 'videodemo', 'pipeline', 'emotion', 'masters', 'catalog'].forEach(t => {{
         document.getElementById(`section-${{t}}`).classList.add('hidden');
         document.getElementById(`nav-${{t}}`).className = 'nav-tab px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold bg-[var(--background)] border border-[var(--border)] text-[var(--foreground)] hover:bg-[var(--card)] cursor-pointer';
       }});
