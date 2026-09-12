@@ -225,7 +225,66 @@ pipeline_steps = [
     }
 ]
 
-print("Assembling HTML template...")
+# Mermaid Flowchart Definition
+mermaid_code = """flowchart TD
+    subgraph S1["STEP 1: INGEST & UNPACKING"]
+        IN_SRC["Raw Comic (.cbz / .zip / folder)"] --> IN_PROC["Archive Ingestion Engine"]
+        IN_PROC --> IN_SORT["Chronological Page Sorting"]
+        IN_SORT --> S1_OUT["data/.../pages/ (page_01..page_24.jpg)"]
+    end
+
+    subgraph S2["STEP 2: PRECISION PANEL SLICING"]
+        S1_OUT --> S2_CANNY["OpenCV Canny + Morphology Filter"]
+        S2_CANNY --> S2_EVAL{"Evaluation Gate: Text Cutoff?"}
+        S2_EVAL -->|Fails Margin| S2_EXP["Auto-Expand Margins (+25px Padding)"]
+        S2_EXP --> S2_CANNY
+        S2_EVAL -->|Pass| S2_OUT["87 / 87 Clean Panels (*.png)"]
+    end
+
+    subgraph S3["STEP 3: MULTIMODAL VISION EXTRACTION"]
+        S2_OUT --> S3_OCR["EasyOCR Local Text Extraction (0.18s/panel)"]
+        S2_OUT --> S3_GEMMA["Gemma 4 Multimodal Cascade (12 RPM Limiter)"]
+        S3_OCR --> S3_JSON["comic_scene_vision.json"]
+        S3_GEMMA --> S3_JSON
+    end
+
+    subgraph S4["STEP 4: A2-B1 SCRIPT ENGINE"]
+        S3_JSON --> S4_GROQ["Groq Qwen 3.8/3.6 3-Act Continuity Bridge"]
+        S4_GROQ --> S4_LEVERS["Embed 4 Emotion Levers + Punctuation"]
+        S4_LEVERS --> S4_OUT["full_storyteller_script.json (27 Scenes)"]
+    end
+
+    subgraph S5["STEP 5: POCKET-TTS CPU SYNTHESIS"]
+        S4_OUT --> S5_MODEL["Kyutai Pocket-TTS (24kHz Mimi Codec, 3.3x RTF)"]
+        S5_MODEL --> S5_STUART["Stuart Bell (Main Action Narrator)"]
+        S5_MODEL --> S5_ALBA["Alba (Classic Storyteller)"]
+        S5_MODEL --> S5_TELUGU["Telugu 86MB INT4 Live Local Model"]
+        S5_STUART --> S5_WAV["output/.../voiceovers/*.wav"]
+        S5_ALBA --> S5_WAV
+        S5_TELUGU --> S5_WAV
+    end
+
+    subgraph S6["STEP 6: STUDIO AUDIO MASTERING"]
+        S5_WAV --> S6_EQ["FFmpeg 85Hz High-Pass + 3.8kHz Presence Boost"]
+        S6_EQ --> S6_LUFS["EBU R128 (-16 LUFS) Broadcast Normalization"]
+        S6_LUFS --> S6_DUCK["Sidechain Ducking (-6dB on Background Music)"]
+        S6_DUCK --> S6_OUT["full_master_soundtrack.wav (320k True Stereo)"]
+    end
+
+    subgraph S7["STEP 7: 60 FPS SUB-PIXEL MOTION"]
+        S2_OUT & S4_OUT & S6_OUT --> S7_WARP["64-Bit Affine Sub-Pixel Camera Engine"]
+        S7_WARP --> S7_AMBIENT["Ambient Blurred Fill (No Black Bars)"]
+        S7_AMBIENT --> S7_ZOOM["1.35x Snap-Punch Action Zooms + Ken Burns"]
+        S7_ZOOM --> S7_OUT["Rendered 1080p60 Episode Video (.mp4)"]
+    end
+
+    subgraph S8["STEP 8: ASSEMBLY & PACKAGING"]
+        S7_OUT --> S8_PKG["Movie Assembler (Clean Bridges)"]
+        S8_PKG --> S8_THUMB["High-CTR Marvel Badge 1080p Thumbnail"]
+        S8_THUMB --> S8_FINAL["Final YouTube Package (.mp4 + thumbnail.jpg)"]
+    end"""
+
+print("Assembling HTML template with Mermaid.js & Visual SVG...")
 
 html_content = f"""<!DOCTYPE html>
 <html lang="en">
@@ -234,6 +293,24 @@ html_content = f"""<!DOCTYPE html>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Comic Video Automation — Master Pipeline & Voice Showcase</title>
   <script src="https://www.gstatic.com/antigravity/web/dev/tailwindcss.min.js"></script>
+  <!-- Mermaid.js for Interactive Flowchart Rendering -->
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+    mermaid.initialize({{
+      startOnLoad: true,
+      theme: 'dark',
+      themeVariables: {{
+        primaryColor: '#059669',
+        primaryTextColor: '#ffffff',
+        primaryBorderColor: '#10b981',
+        lineColor: '#10b981',
+        secondaryColor: '#1e293b',
+        tertiaryColor: '#0f172a',
+        background: 'transparent',
+        fontFamily: 'sans-serif'
+      }}
+    }});
+  </script>
   <style>
     @keyframes pulse-bar {{
       0%, 100% {{ height: 4px; }}
@@ -243,6 +320,15 @@ html_content = f"""<!DOCTYPE html>
     .animate-wave-2 {{ animation: pulse-bar 0.6s ease-in-out infinite 0.15s; }}
     .animate-wave-3 {{ animation: pulse-bar 0.9s ease-in-out infinite 0.3s; }}
     .animate-wave-4 {{ animation: pulse-bar 0.7s ease-in-out infinite 0.2s; }}
+
+    /* Flowchart Node Styling */
+    .flow-node {{
+      transition: all 0.2s ease-in-out;
+    }}
+    .flow-node:hover {{
+      transform: translateY(-2px);
+      box-shadow: 0 8px 24px -4px rgba(16, 185, 129, 0.2);
+    }}
   </style>
 </head>
 <body class="bg-[var(--background)] text-[var(--foreground)] p-4 sm:p-8 font-sans min-h-screen">
@@ -271,7 +357,7 @@ html_content = f"""<!DOCTYPE html>
 
         <div class="flex items-center gap-4 bg-[var(--background)] px-5 py-3 rounded-2xl border border-[var(--border)]">
           <div>
-            <div class="text-[11px] text-[var(--muted-foreground)] uppercase font-semibold tracking-wider">Panels Analyzed</div>
+            <div class="text-[11px] text-[var(--muted-foreground)] uppercase font-semibold tracking-wider">Panels Sliced</div>
             <div class="text-xl font-bold text-[var(--foreground)]">87 / 87 Clean</div>
           </div>
           <div class="h-10 w-px bg-[var(--border)]"></div>
@@ -284,7 +370,10 @@ html_content = f"""<!DOCTYPE html>
 
       <!-- Main Navigation Tabs -->
       <nav class="flex flex-wrap gap-2 mt-8 pt-6 border-t border-[var(--border)]">
-        <button onclick="switchNav('pipeline')" id="nav-pipeline" class="nav-tab px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold bg-[var(--primary)] text-[var(--primary-foreground)] shadow-sm cursor-pointer">
+        <button onclick="switchNav('diagram')" id="nav-diagram" class="nav-tab px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold bg-[var(--primary)] text-[var(--primary-foreground)] shadow-sm cursor-pointer">
+          📊 Architecture Diagram
+        </button>
+        <button onclick="switchNav('pipeline')" id="nav-pipeline" class="nav-tab px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold bg-[var(--background)] border border-[var(--border)] text-[var(--foreground)] hover:bg-[var(--card)] cursor-pointer">
           🏗️ Pipeline Steps (1 to 8)
         </button>
         <button onclick="switchNav('emotion')" id="nav-emotion" class="nav-tab px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold bg-[var(--background)] border border-[var(--border)] text-[var(--foreground)] hover:bg-[var(--card)] cursor-pointer">
@@ -299,8 +388,190 @@ html_content = f"""<!DOCTYPE html>
       </nav>
     </header>
 
+    <!-- SECTION 0: ARCHITECTURE FLOWCHART & MERMAID DIAGRAM -->
+    <section id="section-diagram" class="space-y-6">
+      <div class="bg-[var(--card)] border border-[var(--border)] rounded-3xl p-6 sm:p-8 shadow-sm">
+        <div class="flex flex-wrap items-center justify-between gap-4 mb-6">
+          <div>
+            <div class="flex items-center gap-2 mb-1">
+              <span class="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">
+                End-to-End Modular Pipeline
+              </span>
+              <span class="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-blue-500/10 text-blue-500 border border-blue-500/20">
+                Zero Black Bars • 60 FPS CFR
+              </span>
+            </div>
+            <h2 class="text-2xl sm:text-3xl font-bold tracking-tight">System Architecture & Pipeline Dataflow</h2>
+            <p class="text-sm text-[var(--muted-foreground)] mt-1">
+              Interactive high-level architecture: from raw comic archives to final 1080p60 cinematic YouTube export.
+            </p>
+          </div>
+
+          <!-- View Mode Toggle -->
+          <div class="flex items-center gap-1 bg-[var(--background)] p-1 rounded-xl border border-[var(--border)]">
+            <button onclick="toggleDiagramView('visual')" id="btn-view-visual" class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-[var(--primary)] text-[var(--primary-foreground)] cursor-pointer">
+              Interactive Visual Map
+            </button>
+            <button onclick="toggleDiagramView('mermaid')" id="btn-view-mermaid" class="px-3 py-1.5 rounded-lg text-xs font-semibold text-[var(--muted-foreground)] hover:text-[var(--foreground)] cursor-pointer">
+              Mermaid.js Flowchart
+            </button>
+          </div>
+        </div>
+
+        <!-- 1. Interactive Visual Flow Nodes -->
+        <div id="diagram-visual-view" class="space-y-4">
+          <!-- Flow Strip: Ingest to Output -->
+          <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+            
+            <!-- Stage 1 -->
+            <div class="flow-node bg-[var(--background)] border border-[var(--border)] hover:border-emerald-500/50 rounded-2xl p-4 flex flex-col justify-between">
+              <div>
+                <div class="flex items-center justify-between gap-2 mb-2">
+                  <span class="text-[11px] font-mono font-bold px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">STAGE 01</span>
+                  <span class="text-[10px] text-emerald-500 font-semibold">100% DONE</span>
+                </div>
+                <h4 class="text-sm font-bold text-[var(--foreground)]">Ingest & Unpack</h4>
+                <p class="text-xs text-[var(--muted-foreground)] mt-1">Extracts .cbz/.cbr/.zip, normalizes dimensions, chronological sorting.</p>
+              </div>
+              <div class="mt-3 pt-2 border-t border-[var(--border)] text-[11px] font-mono text-[var(--muted-foreground)]">
+                Output: 24 Pages (.jpg)
+              </div>
+            </div>
+
+            <!-- Stage 2 -->
+            <div class="flow-node bg-[var(--background)] border border-[var(--border)] hover:border-emerald-500/50 rounded-2xl p-4 flex flex-col justify-between">
+              <div>
+                <div class="flex items-center justify-between gap-2 mb-2">
+                  <span class="text-[11px] font-mono font-bold px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">STAGE 02</span>
+                  <span class="text-[10px] text-emerald-500 font-semibold">87/87 CLEAN</span>
+                </div>
+                <h4 class="text-sm font-bold text-[var(--foreground)]">Precision Panel Slicing</h4>
+                <p class="text-xs text-[var(--muted-foreground)] mt-1">OpenCV Canny morphology + adaptive margin expander (+25px) gate.</p>
+              </div>
+              <div class="mt-3 pt-2 border-t border-[var(--border)] text-[11px] font-mono text-[var(--muted-foreground)]">
+                Output: 87 Panels (.png)
+              </div>
+            </div>
+
+            <!-- Stage 3 -->
+            <div class="flow-node bg-[var(--background)] border border-[var(--border)] hover:border-emerald-500/50 rounded-2xl p-4 flex flex-col justify-between">
+              <div>
+                <div class="flex items-center justify-between gap-2 mb-2">
+                  <span class="text-[11px] font-mono font-bold px-2 py-0.5 rounded bg-blue-500/10 text-blue-500 border border-blue-500/20">STAGE 03</span>
+                  <span class="text-[10px] text-blue-500 font-semibold">0 QUOTA 429s</span>
+                </div>
+                <h4 class="text-sm font-bold text-[var(--foreground)]">Multimodal Vision</h4>
+                <p class="text-xs text-[var(--muted-foreground)] mt-1">EasyOCR (0.18s) + Gemma 4 Cascade with thread-safe 12 RPM limiter.</p>
+              </div>
+              <div class="mt-3 pt-2 border-t border-[var(--border)] text-[11px] font-mono text-[var(--muted-foreground)]">
+                Output: comic_scene_vision.json
+              </div>
+            </div>
+
+            <!-- Stage 4 -->
+            <div class="flow-node bg-[var(--background)] border border-[var(--border)] hover:border-amber-500/50 rounded-2xl p-4 flex flex-col justify-between">
+              <div>
+                <div class="flex items-center justify-between gap-2 mb-2">
+                  <span class="text-[11px] font-mono font-bold px-2 py-0.5 rounded bg-amber-500/10 text-amber-500 border border-amber-500/20">STAGE 04</span>
+                  <span class="text-[10px] text-amber-500 font-semibold">GRADE 5.8 (A2-B1)</span>
+                </div>
+                <h4 class="text-sm font-bold text-[var(--foreground)]">Accessible Scriptwriting</h4>
+                <p class="text-xs text-[var(--muted-foreground)] mt-1">Groq Qwen 3-Act sliding bridge. Embeds 4 Pocket-TTS emotion levers.</p>
+              </div>
+              <div class="mt-3 pt-2 border-t border-[var(--border)] text-[11px] font-mono text-[var(--muted-foreground)]">
+                Output: full_storyteller_script.json
+              </div>
+            </div>
+
+          </div>
+
+          <!-- Connecting Arrow Divider -->
+          <div class="flex items-center justify-center py-1">
+            <div class="w-8 h-8 rounded-full bg-[var(--primary)]/10 border border-[var(--primary)]/30 flex items-center justify-center text-[var(--primary)] font-bold">
+              ↓
+            </div>
+          </div>
+
+          <!-- Bottom Row: Audio to Video Packaging -->
+          <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+
+            <!-- Stage 5 -->
+            <div class="flow-node bg-[var(--background)] border border-[var(--border)] hover:border-emerald-500/50 rounded-2xl p-4 flex flex-col justify-between">
+              <div>
+                <div class="flex items-center justify-between gap-2 mb-2">
+                  <span class="text-[11px] font-mono font-bold px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">STAGE 05</span>
+                  <span class="text-[10px] text-emerald-500 font-semibold">3.3x RTF ON CPU</span>
+                </div>
+                <h4 class="text-sm font-bold text-[var(--foreground)]">Pocket-TTS Engine</h4>
+                <p class="text-xs text-[var(--muted-foreground)] mt-1">Kyutai Flow-Matching + Mimi Codec (24kHz). Stuart Bell (Main), Alba, Charles, Telugu.</p>
+              </div>
+              <div class="mt-3 pt-2 border-t border-[var(--border)] text-[11px] font-mono text-[var(--muted-foreground)]">
+                Output: 81 Scene WAVs (0 MB VRAM)
+              </div>
+            </div>
+
+            <!-- Stage 6 -->
+            <div class="flow-node bg-[var(--background)] border border-[var(--border)] hover:border-emerald-500/50 rounded-2xl p-4 flex flex-col justify-between">
+              <div>
+                <div class="flex items-center justify-between gap-2 mb-2">
+                  <span class="text-[11px] font-mono font-bold px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">STAGE 06</span>
+                  <span class="text-[10px] text-emerald-500 font-semibold">-16.0 LUFS BROADCAST</span>
+                </div>
+                <h4 class="text-sm font-bold text-[var(--foreground)]">Studio Audio Mastering</h4>
+                <p class="text-xs text-[var(--muted-foreground)] mt-1">FFmpeg SOXR chain: 85Hz HP, +5dB Presence EQ @ 3.8kHz, Dynamic Sidechain Ducking.</p>
+              </div>
+              <div class="mt-3 pt-2 border-t border-[var(--border)] text-[11px] font-mono text-[var(--muted-foreground)]">
+                Output: Mastered Tracks (WAV/MP3)
+              </div>
+            </div>
+
+            <!-- Stage 7 -->
+            <div class="flow-node bg-[var(--background)] border border-[var(--border)] hover:border-purple-500/50 rounded-2xl p-4 flex flex-col justify-between">
+              <div>
+                <div class="flex items-center justify-between gap-2 mb-2">
+                  <span class="text-[11px] font-mono font-bold px-2 py-0.5 rounded bg-purple-500/10 text-purple-500 border border-purple-500/20">STAGE 07</span>
+                  <span class="text-[10px] text-purple-500 font-semibold">60 FPS CFR</span>
+                </div>
+                <h4 class="text-sm font-bold text-[var(--foreground)]">Motion Video Engine</h4>
+                <p class="text-xs text-[var(--muted-foreground)] mt-1">64-bit float affine warp (cv2.INTER_CUBIC), Ken Burns floating moves & 1.35x snap zooms.</p>
+              </div>
+              <div class="mt-3 pt-2 border-t border-[var(--border)] text-[11px] font-mono text-[var(--muted-foreground)]">
+                Output: 1080p60 Episode Video (.mp4)
+              </div>
+            </div>
+
+            <!-- Stage 8 -->
+            <div class="flow-node bg-[var(--background)] border border-[var(--border)] hover:border-pink-500/50 rounded-2xl p-4 flex flex-col justify-between">
+              <div>
+                <div class="flex items-center justify-between gap-2 mb-2">
+                  <span class="text-[11px] font-mono font-bold px-2 py-0.5 rounded bg-pink-500/10 text-pink-500 border border-pink-500/20">STAGE 08</span>
+                  <span class="text-[10px] text-pink-500 font-semibold">YOUTUBE READY</span>
+                </div>
+                <h4 class="text-sm font-bold text-[var(--foreground)]">Assembly & Thumbnail</h4>
+                <p class="text-xs text-[var(--muted-foreground)] mt-1">Clean compilation without duplicate cards + High-CTR 1080p Marvel comic badge.</p>
+              </div>
+              <div class="mt-3 pt-2 border-t border-[var(--border)] text-[11px] font-mono text-[var(--muted-foreground)]">
+                Output: Final Video + thumbnail.jpg
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+        <!-- 2. Mermaid.js Native Diagram View -->
+        <div id="diagram-mermaid-view" class="hidden space-y-4">
+          <div class="bg-[var(--background)] p-4 sm:p-6 rounded-2xl border border-[var(--border)] overflow-x-auto">
+            <div class="mermaid">
+{mermaid_code}
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
     <!-- SECTION 1: FULL PIPELINE STEPS (1 TO 8) -->
-    <section id="section-pipeline" class="space-y-6">
+    <section id="section-pipeline" class="space-y-6 hidden">
       <div class="flex items-center justify-between">
         <div>
           <h2 class="text-2xl font-bold tracking-tight">Full Step-by-Step Pipeline Workflow</h2>
@@ -477,7 +748,7 @@ html_content = f"""<!DOCTYPE html>
     let activeBtn = null;
 
     function switchNav(tab) {{
-      ['pipeline', 'emotion', 'masters', 'catalog'].forEach(t => {{
+      ['diagram', 'pipeline', 'emotion', 'masters', 'catalog'].forEach(t => {{
         document.getElementById(`section-${{t}}`).classList.add('hidden');
         document.getElementById(`nav-${{t}}`).className = 'nav-tab px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold bg-[var(--background)] border border-[var(--border)] text-[var(--foreground)] hover:bg-[var(--card)] cursor-pointer';
       }});
@@ -487,6 +758,25 @@ html_content = f"""<!DOCTYPE html>
 
       if (tab === 'catalog') {{
         renderCatalog(allVoices);
+      }}
+    }}
+
+    function toggleDiagramView(mode) {{
+      const visualView = document.getElementById('diagram-visual-view');
+      const mermaidView = document.getElementById('diagram-mermaid-view');
+      const btnVisual = document.getElementById('btn-view-visual');
+      const btnMermaid = document.getElementById('btn-view-mermaid');
+
+      if (mode === 'visual') {{
+        visualView.classList.remove('hidden');
+        mermaidView.classList.add('hidden');
+        btnVisual.className = 'px-3 py-1.5 rounded-lg text-xs font-semibold bg-[var(--primary)] text-[var(--primary-foreground)] cursor-pointer';
+        btnMermaid.className = 'px-3 py-1.5 rounded-lg text-xs font-semibold text-[var(--muted-foreground)] hover:text-[var(--foreground)] cursor-pointer';
+      }} else {{
+        visualView.classList.add('hidden');
+        mermaidView.classList.remove('hidden');
+        btnMermaid.className = 'px-3 py-1.5 rounded-lg text-xs font-semibold bg-[var(--primary)] text-[var(--primary-foreground)] cursor-pointer';
+        btnVisual.className = 'px-3 py-1.5 rounded-lg text-xs font-semibold text-[var(--muted-foreground)] hover:text-[var(--foreground)] cursor-pointer';
       }}
     }}
 
@@ -587,4 +877,4 @@ art_path = "/home/rythamo/.gemini/antigravity/brain/fd9f1455-5d6a-42b4-9953-69ce
 with open(art_path, "w", encoding="utf-8") as f:
     f.write(html_content)
 
-print("Comprehensive master dashboard built successfully at docs/index.html and artifact showcase!")
+print("Master website with Mermaid.js & Visual Architecture Flowchart built successfully!")
